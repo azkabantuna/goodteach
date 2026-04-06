@@ -89,6 +89,16 @@
         background: #fff;
       }
 
+      .auto-generate-btn {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 7px 10px;
+        background: #eef2ff;
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
       .specialist-picker {
         position: relative;
         width: 260px;
@@ -294,6 +304,75 @@
         cursor: pointer;
       }
 
+      .auto-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 23, 42, 0.35);
+        z-index: 120;
+      }
+
+      .auto-modal.open {
+        display: flex;
+      }
+
+      .auto-dialog {
+        width: min(92vw, 420px);
+        max-height: 80vh;
+        overflow: auto;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+      }
+
+      .auto-dialog h2 {
+        margin: 0 0 10px;
+        font-size: 1rem;
+      }
+
+      .auto-row {
+        display: grid;
+        grid-template-columns: 1fr 84px;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .auto-row label {
+        font-weight: 700;
+      }
+
+      .auto-row input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 5px 7px;
+      }
+
+      .auto-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .auto-actions button {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-weight: 700;
+        cursor: pointer;
+        background: #fff;
+      }
+
+      .auto-actions .run-btn {
+        background: #dbeafe;
+      }
+
       .section-divider {
         border: 0;
         border-top: 2px dashed #cbd5e1;
@@ -389,6 +468,10 @@
             </div>
           </div>
         </div>
+
+        <div class="control-group">
+          <button id="autoGenerateBtn" class="auto-generate-btn" type="button">자동 시간표 생성</button>
+        </div>
       </section>
 
       <section id="timetableGrid" class="timetable-grid" aria-label="시간표"></section>
@@ -411,6 +494,17 @@
           <button type="button" class="ground-btn" data-pe-place="운동장">운동장</button>
         </div>
         <button type="button" id="pePickerCancel" class="pe-picker-cancel">취소</button>
+      </div>
+    </div>
+
+    <div id="autoGenerateModal" class="auto-modal" aria-hidden="true">
+      <div class="auto-dialog" role="dialog" aria-modal="true" aria-label="자동 시간표 생성 설정">
+        <h2>자동 시간표 생성 설정</h2>
+        <div id="autoGenerateRows"></div>
+        <div class="auto-actions">
+          <button type="button" id="autoGenerateRunBtn" class="run-btn">자동 생성 실행</button>
+          <button type="button" id="autoGenerateCancelBtn">취소</button>
+        </div>
       </div>
     </div>
 
@@ -444,6 +538,11 @@
       const subjectOptions = document.getElementById("subjectOptions");
       const pePickerModal = document.getElementById("pePickerModal");
       const pePickerCancel = document.getElementById("pePickerCancel");
+      const autoGenerateBtn = document.getElementById("autoGenerateBtn");
+      const autoGenerateModal = document.getElementById("autoGenerateModal");
+      const autoGenerateRows = document.getElementById("autoGenerateRows");
+      const autoGenerateRunBtn = document.getElementById("autoGenerateRunBtn");
+      const autoGenerateCancelBtn = document.getElementById("autoGenerateCancelBtn");
 
       let classCount = 6;
       let maxPeriodCount = 6;
@@ -535,6 +634,42 @@
           pePickerResolver(selectedPlace);
           pePickerResolver = null;
         }
+      }
+
+      function hasAnyPeAssigned() {
+        return Object.values(subjectStore).some((entry) => entry?.subject === "체육");
+      }
+
+      function openAutoGenerateModal() {
+        const subjects = Array.from(selectedSpecialists);
+        autoGenerateRows.innerHTML = "";
+
+        subjects.forEach((subject) => {
+          const row = document.createElement("div");
+          row.className = "auto-row";
+
+          const label = document.createElement("label");
+          label.textContent = subject;
+
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          input.value = "1";
+          input.dataset.subject = subject;
+          input.setAttribute("aria-label", `${subject} 주당 시수`);
+
+          row.append(label, input);
+          autoGenerateRows.appendChild(row);
+        });
+
+        autoGenerateModal.classList.add("open");
+        autoGenerateModal.setAttribute("aria-hidden", "false");
+      }
+
+      function closeAutoGenerateModal() {
+        autoGenerateModal.classList.remove("open");
+        autoGenerateModal.setAttribute("aria-hidden", "true");
       }
 
       function getSlotSpecialistReferences(day, period) {
@@ -773,7 +908,7 @@
         });
       }
 
-      function hasSpecialistConflict(targetClass, day, period, nextEntry) {
+      function hasSpecialistConflict(targetClass, day, period, nextEntry, showAlert = true) {
         if (!isSpecialistSubject(nextEntry.subject)) return false;
 
         const classes = buildClasses(classCount);
@@ -786,14 +921,18 @@
 
           if (nextEntry.subject === "체육" && existing.subject === "체육") {
             if (existing.pePlace === nextEntry.pePlace) {
-              window.alert(`${day} ${period}교시에는 ${nextEntry.pePlace} 체육이 이미 다른 반에 배치되어 있습니다.`);
+              if (showAlert) {
+                window.alert(`${day} ${period}교시에는 ${nextEntry.pePlace} 체육이 이미 다른 반에 배치되어 있습니다.`);
+              }
               return true;
             }
             continue;
           }
 
           if (existing.subject === nextEntry.subject) {
-            window.alert(`${day} ${period}교시에는 이미 다른 반에 ${nextEntry.subject}이(가) 배치되어 있습니다.`);
+            if (showAlert) {
+              window.alert(`${day} ${period}교시에는 이미 다른 반에 ${nextEntry.subject}이(가) 배치되어 있습니다.`);
+            }
             return true;
           }
         }
@@ -801,13 +940,107 @@
         return false;
       }
 
-      function assignEntryToClassCell(className, day, period, nextEntry) {
+      function assignEntryToClassCell(className, day, period, nextEntry, showAlert = true) {
         const key = getCellKey(className, day, period);
-        if (hasSpecialistConflict(className, day, period, nextEntry)) {
+        if (hasSpecialistConflict(className, day, period, nextEntry, showAlert)) {
           return false;
         }
         subjectStore[key] = nextEntry;
         return true;
+      }
+
+      function countAssignedSubjectForClass(className, subject) {
+        let count = 0;
+        for (let period = 1; period <= maxPeriodCount; period += 1) {
+          for (const day of days) {
+            const entry = getEntry(className, day, period);
+            if (!entry) continue;
+            if (subject === "체육") {
+              if (entry.subject === "체육") count += 1;
+            } else if (entry.subject === subject) {
+              count += 1;
+            }
+          }
+        }
+        return count;
+      }
+
+      function findAutoAssignableSlot(className, subject) {
+        for (let period = 1; period <= maxPeriodCount; period += 1) {
+          for (const day of days) {
+            const existing = getEntry(className, day, period);
+            if (existing) continue;
+
+            if (subject === "체육") {
+              for (const pePlace of ["강당", "운동장"]) {
+                const candidate = { subject: "체육", pePlace };
+                if (!hasSpecialistConflict(className, day, period, candidate, false)) {
+                  return { day, period, entry: candidate };
+                }
+              }
+            } else {
+              const candidate = { subject };
+              if (!hasSpecialistConflict(className, day, period, candidate, false)) {
+                return { day, period, entry: candidate };
+              }
+            }
+          }
+        }
+
+        return null;
+      }
+
+      function runAutoGenerateFromSettings() {
+        const subjectInputs = Array.from(autoGenerateRows.querySelectorAll("input[data-subject]"));
+        if (!subjectInputs.length) {
+          window.alert("전담 과목에서 체크된 항목이 없습니다. 전담 과목을 먼저 선택해 주세요.");
+          return;
+        }
+
+        const targetCounts = {};
+        subjectInputs.forEach((input) => {
+          const subject = input.dataset.subject;
+          const parsed = Number(input.value);
+          targetCounts[subject] = Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+        });
+
+        const shortages = {};
+        const classes = buildClasses(classCount);
+
+        classes.forEach((className) => {
+          subjectInputs.forEach((input) => {
+            const subject = input.dataset.subject;
+            const target = targetCounts[subject];
+            const assigned = countAssignedSubjectForClass(className, subject);
+            let needed = Math.max(0, target - assigned);
+
+            while (needed > 0) {
+              const slot = findAutoAssignableSlot(className, subject);
+              if (!slot) {
+                shortages[subject] = (shortages[subject] || 0) + needed;
+                break;
+              }
+
+              const assignedOk = assignEntryToClassCell(className, slot.day, slot.period, slot.entry, false);
+              if (!assignedOk) {
+                shortages[subject] = (shortages[subject] || 0) + needed;
+                break;
+              }
+              needed -= 1;
+            }
+          });
+        });
+
+        closeAutoGenerateModal();
+        renderTimetables();
+
+        const shortageEntries = Object.entries(shortages).filter(([, lack]) => lack > 0);
+        if (shortageEntries.length) {
+          const messageLines = shortageEntries.map(([subject, lack]) => `- ${subject}: ${lack}시수 부족`);
+          window.alert(`일부 과목은 요청 시수를 모두 배치하지 못했습니다.\n${messageLines.join("\n")}`);
+        } else {
+          window.alert("자동 시간표 생성이 완료되었습니다.");
+        }
       }
 
       function createClassTable(className, periods) {
@@ -1042,6 +1275,32 @@
         });
       }
 
+      function setupAutoGenerate() {
+        autoGenerateBtn.addEventListener("click", () => {
+          if (!hasAnyPeAssigned()) {
+            window.alert("자동 시간표 생성을 시작하기 전에 체육 과목을 먼저 배치해 주세요.");
+            return;
+          }
+
+          window.alert("체육 과목 배치가 확인되었습니다. 자동 시간표 생성을 계속 진행합니다.");
+          openAutoGenerateModal();
+        });
+
+        autoGenerateCancelBtn.addEventListener("click", () => {
+          closeAutoGenerateModal();
+        });
+
+        autoGenerateRunBtn.addEventListener("click", () => {
+          runAutoGenerateFromSettings();
+        });
+
+        autoGenerateModal.addEventListener("click", (event) => {
+          if (event.target === autoGenerateModal) {
+            closeAutoGenerateModal();
+          }
+        });
+      }
+
       fillSelectOptions(classCountSelect, 1, 12, classCount);
       fillSelectOptions(periodCountSelect, 1, 9, maxPeriodCount);
 
@@ -1057,6 +1316,7 @@
 
       setupSpecialistDropdown();
       setupPePicker();
+      setupAutoGenerate();
       renderSpecialistOptions();
       renderTimetables();
     </script>
