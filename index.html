@@ -177,7 +177,7 @@
         background: var(--card);
         border: 1px solid var(--line);
         border-radius: 10px;
-        overflow: hidden;
+        overflow: visible;
         box-shadow: 0 2px 10px rgba(23, 42, 70, 0.08);
       }
 
@@ -523,7 +523,44 @@
         background: #fff;
         border: 1px solid var(--line);
         border-radius: 10px;
-        overflow: hidden;
+        overflow: visible;
+      }
+
+      .conflict-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 23, 42, 0.35);
+        z-index: 140;
+      }
+
+      .conflict-modal.open {
+        display: flex;
+      }
+
+      .conflict-dialog {
+        width: min(90vw, 360px);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+      }
+
+      .conflict-actions {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .conflict-actions button {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        font-weight: 700;
       }
 
       .specialist-title {
@@ -642,7 +679,7 @@
       </div>
     </div>
 
-      <div id="autoGenerateModal" class="auto-modal" aria-hidden="true">
+    <div id="autoGenerateModal" class="auto-modal" aria-hidden="true">
       <div class="auto-dialog" role="dialog" aria-modal="true" aria-label="자동 시간표 생성 설정">
         <h2>자동 시간표 생성 설정</h2>
         <div id="autoGenerateRows"></div>
@@ -665,6 +702,16 @@
         <div class="auto-actions">
           <button type="button" id="autoGenerateRunBtn" class="run-btn">자동 생성 실행</button>
           <button type="button" id="autoGenerateCancelBtn">취소</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="conflictConfirmModal" class="conflict-modal" aria-hidden="true">
+      <div class="conflict-dialog" role="dialog" aria-modal="true" aria-label="충돌 확인">
+        <div>지금 입력한 값은 기존 시간표와 중복되거나 충돌할 수 있습니다. 그래도 계속 진행하시겠습니까?</div>
+        <div class="conflict-actions">
+          <button type="button" id="conflictProceedBtn">진행한다</button>
+          <button type="button" id="conflictCancelBtn">아니다</button>
         </div>
       </div>
     </div>
@@ -706,6 +753,9 @@
       const autoGenerateCancelBtn = document.getElementById("autoGenerateCancelBtn");
       const lastPeriodBody = document.getElementById("lastPeriodBody");
       const checkDuplicateBtn = document.getElementById("checkDuplicateBtn");
+      const conflictConfirmModal = document.getElementById("conflictConfirmModal");
+      const conflictProceedBtn = document.getElementById("conflictProceedBtn");
+      const conflictCancelBtn = document.getElementById("conflictCancelBtn");
 
       let classCount = 6;
       let maxPeriodCount = 6;
@@ -724,6 +774,7 @@
         운동장: "#c4b5fd"
       };
       let pePickerResolver = null;
+      let conflictConfirmResolver = null;
 
       const buildClasses = (count) =>
         Array.from({ length: count }, (_, index) => `${index + 1}반`);
@@ -804,6 +855,24 @@
         if (pePickerResolver) {
           pePickerResolver(selectedPlace);
           pePickerResolver = null;
+        }
+      }
+
+      function openConflictConfirm() {
+        conflictConfirmModal.classList.add("open");
+        conflictConfirmModal.setAttribute("aria-hidden", "false");
+        return new Promise((resolve) => {
+          conflictConfirmResolver = resolve;
+          conflictProceedBtn.focus();
+        });
+      }
+
+      function closeConflictConfirm(accepted) {
+        conflictConfirmModal.classList.remove("open");
+        conflictConfirmModal.setAttribute("aria-hidden", "true");
+        if (conflictConfirmResolver) {
+          conflictConfirmResolver(accepted);
+          conflictConfirmResolver = null;
         }
       }
 
@@ -1249,7 +1318,7 @@
         return true;
       }
 
-      function assignEntryToClassCell(
+      async function assignEntryToClassCell(
         className,
         day,
         period,
@@ -1272,9 +1341,7 @@
         const conflictMessage = getSpecialistConflictMessage(className, day, period, nextEntry);
         if (conflictMessage) {
           if (allowConflictOverride) {
-            const proceed = window.confirm(
-              "현재 선택은 기존 시간표와 중복되거나 충돌할 수 있습니다. 그래도 계속 진행하시겠습니까?"
-            );
+            const proceed = await openConflictConfirm();
             if (!proceed) return false;
           } else {
             if (showAlert) window.alert(conflictMessage);
@@ -1346,6 +1413,17 @@
           }
         }
 
+      function hasSubjectInOtherPeriodSameDay(className, day, period, subject) {
+        for (let currentPeriod = 1; currentPeriod <= maxPeriodCount; currentPeriod += 1) {
+          if (currentPeriod === period) continue;
+          const entry = getEntry(className, day, currentPeriod);
+          if (!entry) continue;
+          if (subject === "체육") {
+            if (entry.subject === "체육") return true;
+          } else if (entry.subject === subject) {
+            return true;
+          }
+        }
         return false;
       }
 
@@ -1394,7 +1472,7 @@
         });
       }
 
-      function runAutoGenerateFromSettings() {
+      async function runAutoGenerateFromSettings() {
         const subjectInputs = Array.from(autoGenerateRows.querySelectorAll("[data-subject]"));
         if (!subjectInputs.length) {
           window.alert("전담 과목에서 체크된 항목이 없습니다. 전담 과목을 먼저 선택해 주세요.");
@@ -1416,9 +1494,9 @@
         const classes = buildClasses(classCount);
         const shuffledClasses = [...classes].sort(() => Math.random() - 0.5);
 
-        shuffledClasses.forEach((className) => {
+        for (const className of shuffledClasses) {
           const shuffledInputs = [...subjectInputs].sort(() => Math.random() - 0.5);
-          shuffledInputs.forEach((input) => {
+          for (const input of shuffledInputs) {
             const subject = input.dataset.subject;
             const target = targetCounts[subject];
             const assigned = countAssignedSubjectForClass(className, subject);
@@ -1431,15 +1509,15 @@
                 break;
               }
 
-              const assignedOk = assignEntryToClassCell(className, slot.day, slot.period, slot.entry, false, "auto");
+              const assignedOk = await assignEntryToClassCell(className, slot.day, slot.period, slot.entry, false, "auto");
               if (!assignedOk) {
                 shortages[subject] = (shortages[subject] || 0) + needed;
                 break;
               }
               needed -= 1;
             }
-          });
-        });
+          }
+        }
 
         closeAutoGenerateModal();
         renderTimetables();
@@ -1607,7 +1685,7 @@
                 nextEntry = { subject: "체육", pePlace };
               }
 
-              if (!assignEntryToClassCell(className, day, period, nextEntry, true, "manual", true)) {
+              if (!(await assignEntryToClassCell(className, day, period, nextEntry, true, "manual", true))) {
                 return;
               }
 
@@ -1706,7 +1784,7 @@
           delete subjectStore[item.key];
         });
 
-        if (!assignEntryToClassCell(className, day, period, nextEntry, true, "manual", true)) {
+        if (!(await assignEntryToClassCell(className, day, period, nextEntry, true, "manual", true))) {
           backup.forEach((item) => {
             subjectStore[item.key] = item.entry;
           });
@@ -1737,7 +1815,7 @@
         });
 
         const nextEntry = { subject: "체육", pePlace };
-        if (!assignEntryToClassCell(className, day, period, nextEntry, true, "manual", true)) {
+        if (!(await assignEntryToClassCell(className, day, period, nextEntry, true, "manual", true))) {
           backup.forEach((item) => {
             subjectStore[item.key] = item.entry;
           });
@@ -1788,7 +1866,7 @@
             const option = document.createElement("button");
             option.type = "button";
             option.className = "class-select-option";
-            option.textContent = `${number}반`;
+            option.textContent = String(number);
             option.addEventListener("click", async (event) => {
               event.stopPropagation();
               await onSelect(String(number));
@@ -1873,6 +1951,20 @@
         });
       }
 
+      function setupConflictConfirmModal() {
+        conflictProceedBtn.addEventListener("click", () => {
+          closeConflictConfirm(true);
+        });
+        conflictCancelBtn.addEventListener("click", () => {
+          closeConflictConfirm(false);
+        });
+        conflictConfirmModal.addEventListener("click", (event) => {
+          if (event.target === conflictConfirmModal) {
+            closeConflictConfirm(false);
+          }
+        });
+      }
+
       function setupAutoGenerate() {
         autoGenerateBtn.addEventListener("click", () => {
           if (!hasAnyPeAssigned()) {
@@ -1886,8 +1978,8 @@
           closeAutoGenerateModal();
         });
 
-        autoGenerateRunBtn.addEventListener("click", () => {
-          runAutoGenerateFromSettings();
+        autoGenerateRunBtn.addEventListener("click", async () => {
+          await runAutoGenerateFromSettings();
         });
 
         autoGenerateModal.addEventListener("click", (event) => {
@@ -1933,6 +2025,7 @@
 
       setupSpecialistDropdown();
       setupPePicker();
+      setupConflictConfirmModal();
       setupAutoGenerate();
       setupDuplicateCheck();
       setupSpecialistCellMenuClose();
