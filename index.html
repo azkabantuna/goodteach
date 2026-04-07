@@ -415,6 +415,29 @@
         cursor: pointer;
       }
 
+      .class-select-menu {
+        position: absolute;
+        left: 4px;
+        right: 4px;
+        top: 4px;
+        z-index: 90;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 6px 20px rgba(23, 42, 70, 0.2);
+        max-height: 180px;
+        overflow: auto;
+      }
+
+      .class-select-option {
+        width: 100%;
+        border: 0;
+        background: #fff;
+        padding: 7px 8px;
+        text-align: left;
+        cursor: pointer;
+      }
+
       .auto-actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -751,12 +774,6 @@
             return `강${instructorNumber}X`;
           }
         }
-        if (entry.subject.startsWith("강사")) {
-          const instructorNumber = entry.subject.replace("강사", "");
-          if (instructorNumber) {
-            return `강${instructorNumber}X`;
-          }
-        }
         return `${entry.subject[0]}X`;
       }
 
@@ -1077,6 +1094,7 @@
               td.style.cursor = "pointer";
               td.title = "클릭해서 반 번호 선택";
               td.setAttribute("tabindex", "0");
+              td.style.position = "relative";
               td.addEventListener("click", () => {
                 editSpecialistCell(td, tableName, day, period);
               });
@@ -1661,36 +1679,34 @@
       }
 
       function editSpecialistCell(cell, tableName, day, period) {
-        const existingAssignments = getSpecialistAssignmentsAtSlot(tableName, day, period);
-        const currentClassNumber = existingAssignments.length === 1 ? existingAssignments[0].className.replace("반", "") : "";
+        document.querySelectorAll(".class-select-menu").forEach((menu) => menu.remove());
 
-        const select = document.createElement("select");
-        select.setAttribute("aria-label", `${tableName} ${day} ${period}교시 반 선택`);
-        const emptyOption = document.createElement("option");
-        emptyOption.value = "";
-        emptyOption.textContent = "비우기";
-        select.appendChild(emptyOption);
+        const menu = document.createElement("div");
+        menu.className = "class-select-menu";
+
+        const clearButton = document.createElement("button");
+        clearButton.type = "button";
+        clearButton.className = "class-select-option";
+        clearButton.textContent = "비우기";
+        clearButton.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          await applySpecialistDropdownSelection(tableName, day, period, "");
+        });
+        menu.appendChild(clearButton);
 
         for (let number = 1; number <= classCount; number += 1) {
-          const option = document.createElement("option");
-          option.value = String(number);
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "class-select-option";
           option.textContent = `${number}반`;
-          select.appendChild(option);
+          option.addEventListener("click", async (event) => {
+            event.stopPropagation();
+            await applySpecialistDropdownSelection(tableName, day, period, String(number));
+          });
+          menu.appendChild(option);
         }
-        select.value = currentClassNumber;
 
-        cell.innerHTML = "";
-        cell.appendChild(select);
-        select.focus();
-
-        const applyAndClose = async () => {
-          await applySpecialistDropdownSelection(tableName, day, period, select.value);
-        };
-
-        select.addEventListener("change", applyAndClose, { once: true });
-        select.addEventListener("blur", () => {
-          renderTimetables();
-        });
+        cell.appendChild(menu);
       }
 
       function renderSpecialistOptions() {
@@ -1793,6 +1809,14 @@
         });
       }
 
+      function setupSpecialistCellMenuClose() {
+        document.addEventListener("click", (event) => {
+          if (event.target.closest(".class-select-menu")) return;
+          if (event.target.closest(".specialist-card td")) return;
+          document.querySelectorAll(".class-select-menu").forEach((menu) => menu.remove());
+        });
+      }
+
       fillSelectOptions(classCountSelect, 1, 12, classCount);
       fillSelectOptions(periodCountSelect, 1, 9, maxPeriodCount);
 
@@ -1810,6 +1834,7 @@
       setupPePicker();
       setupAutoGenerate();
       setupDuplicateCheck();
+      setupSpecialistCellMenuClose();
       renderSpecialistOptions();
       renderTimetables();
     </script>
