@@ -439,6 +439,14 @@
         cursor: pointer;
       }
 
+      .class-select-section-title {
+        padding: 6px 8px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #6b7280;
+        border-top: 1px solid #e5e7eb;
+      }
+
       .auto-actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -1558,6 +1566,7 @@
             }
 
             const editCell = async () => {
+              if (!confirmEditIfConflictHint(cell)) return;
               const existingEntry = subjectStore[key];
               const current = existingEntry ? existingEntry.subject : "";
               const value = window.prompt(
@@ -1640,6 +1649,24 @@
         return assignments;
       }
 
+      function getPeAssignmentByPlace(day, period, pePlace) {
+        const classes = buildClasses(classCount);
+        for (const className of classes) {
+          const entry = getEntry(className, day, period);
+          if (entry?.subject === "체육" && entry.pePlace === pePlace) {
+            return { className, entry };
+          }
+        }
+        return null;
+      }
+
+      function confirmEditIfConflictHint(cell) {
+        const hasConflictHint =
+          !!cell.querySelector(".cell-restrictions") || !!cell.querySelector(".specialist-conflict-hint");
+        if (!hasConflictHint) return true;
+        return window.confirm("이 칸은 중복 또는 충돌 가능성이 있습니다. 계속 수정하시겠습니까?");
+      }
+
       async function applySpecialistDropdownSelection(tableName, day, period, selectedClassNumber) {
         const existingAssignments = getSpecialistAssignmentsAtSlot(tableName, day, period);
         const backup = existingAssignments.map((item) => ({
@@ -1683,32 +1710,87 @@
         renderTimetables();
       }
 
+      async function applyPePlaceDropdownSelection(day, period, pePlace, selectedClassNumber) {
+        const existing = getPeAssignmentByPlace(day, period, pePlace);
+        const backup = existing
+          ? [{ key: getCellKey(existing.className, day, period), entry: existing.entry }]
+          : [];
+
+        if (!selectedClassNumber) {
+          backup.forEach((item) => {
+            delete subjectStore[item.key];
+          });
+          renderTimetables();
+          return;
+        }
+
+        const className = `${selectedClassNumber}반`;
+        backup.forEach((item) => {
+          delete subjectStore[item.key];
+        });
+
+        const nextEntry = { subject: "체육", pePlace };
+        if (!assignEntryToClassCell(className, day, period, nextEntry)) {
+          backup.forEach((item) => {
+            subjectStore[item.key] = item.entry;
+          });
+          renderTimetables();
+          return;
+        }
+        renderTimetables();
+      }
+
       function editSpecialistCell(cell, tableName, day, period) {
+        if (!confirmEditIfConflictHint(cell)) return;
         document.querySelectorAll(".class-select-menu").forEach((menu) => menu.remove());
 
         const menu = document.createElement("div");
         menu.className = "class-select-menu";
 
-        const clearButton = document.createElement("button");
-        clearButton.type = "button";
-        clearButton.className = "class-select-option";
-        clearButton.textContent = "비우기";
-        clearButton.addEventListener("click", async (event) => {
-          event.stopPropagation();
-          await applySpecialistDropdownSelection(tableName, day, period, "");
-        });
-        menu.appendChild(clearButton);
-
-        for (let number = 1; number <= classCount; number += 1) {
-          const option = document.createElement("button");
-          option.type = "button";
-          option.className = "class-select-option";
-          option.textContent = `${number}반`;
-          option.addEventListener("click", async (event) => {
+        const renderOptions = (onSelect) => {
+          const clearButton = document.createElement("button");
+          clearButton.type = "button";
+          clearButton.className = "class-select-option";
+          clearButton.textContent = "비우기";
+          clearButton.addEventListener("click", async (event) => {
             event.stopPropagation();
-            await applySpecialistDropdownSelection(tableName, day, period, String(number));
+            await onSelect("");
           });
-          menu.appendChild(option);
+          menu.appendChild(clearButton);
+
+          for (let number = 1; number <= classCount; number += 1) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "class-select-option";
+            option.textContent = `${number}반`;
+            option.addEventListener("click", async (event) => {
+              event.stopPropagation();
+              await onSelect(String(number));
+            });
+            menu.appendChild(option);
+          }
+        };
+
+        if (tableName === "체육") {
+          const gymTitle = document.createElement("div");
+          gymTitle.className = "class-select-section-title";
+          gymTitle.textContent = "강당";
+          menu.appendChild(gymTitle);
+          renderOptions(async (classNumber) => {
+            await applyPePlaceDropdownSelection(day, period, "강당", classNumber);
+          });
+
+          const groundTitle = document.createElement("div");
+          groundTitle.className = "class-select-section-title";
+          groundTitle.textContent = "운동장";
+          menu.appendChild(groundTitle);
+          renderOptions(async (classNumber) => {
+            await applyPePlaceDropdownSelection(day, period, "운동장", classNumber);
+          });
+        } else {
+          renderOptions(async (classNumber) => {
+            await applySpecialistDropdownSelection(tableName, day, period, classNumber);
+          });
         }
 
         cell.appendChild(menu);
