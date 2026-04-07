@@ -509,6 +509,10 @@
         color: #94a3b8;
       }
 
+      .credit-note a {
+        color: inherit;
+      }
+
       .specialist-conflict-hint {
         color: #6b7280;
         font-weight: 600;
@@ -545,7 +549,12 @@
           <li>자동 생성은 설정한 시수대로 전담 과목을 배치하며, 다시 실행해도 수동 확정값/체육/X 설정은 유지됩니다.</li>
           <li>중복 확인 버튼으로 충돌 여부를 빠르게 점검하세요.</li>
         </ol>
-        <div class="credit-note">제작: github: azkabantuna · 치다랑어의 블로그</div>
+        <div class="credit-note">
+          제작: github: azkabantuna ·
+          <a href="https://m.blog.naver.com/2808happy" target="_blank" rel="noopener noreferrer">
+            치다랑어의 블로그
+          </a>
+        </div>
       </section>
 
       <section class="controls" aria-label="표시 설정">
@@ -734,7 +743,13 @@
       function getRestrictionText(entry) {
         if (!entry) return "";
         if (entry.subject === "체육" && entry.pePlace) {
-          return `${entry.pePlace[0]}X`;
+          return entry.pePlace === "강당" ? "체강X" : "체운X";
+        }
+        if (entry.subject.startsWith("강사")) {
+          const instructorNumber = entry.subject.replace("강사", "");
+          if (instructorNumber) {
+            return `강${instructorNumber}X`;
+          }
         }
         if (entry.subject.startsWith("강사")) {
           const instructorNumber = entry.subject.replace("강사", "");
@@ -1060,15 +1075,15 @@
               }
 
               td.style.cursor = "pointer";
-              td.title = "클릭해서 반 번호 입력";
+              td.title = "클릭해서 반 번호 선택";
               td.setAttribute("tabindex", "0");
               td.addEventListener("click", () => {
-                editSpecialistCell(tableName, day, period);
+                editSpecialistCell(td, tableName, day, period);
               });
               td.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  editSpecialistCell(tableName, day, period);
+                  editSpecialistCell(td, tableName, day, period);
                 }
               });
               row.appendChild(td);
@@ -1590,51 +1605,92 @@
         renderSpecialistTimetables();
       }
 
-      async function editSpecialistCell(tableName, day, period) {
-        const promptText = `${tableName} 전담 ${day} ${period}교시에 배정할 반 번호를 입력하세요 (1~${classCount}, 비우려면 공백).`;
-        const value = window.prompt(promptText, "");
-        if (value === null) return;
-
-        const trimmed = value.trim();
+      function getSpecialistAssignmentsAtSlot(tableName, day, period) {
         const classes = buildClasses(classCount);
-        const existingClass = classes.find((className) => {
+        const assignments = [];
+        classes.forEach((className) => {
           const entry = getEntry(className, day, period);
-          return getEntryTableName(entry) === tableName;
+          if (getEntryTableName(entry) === tableName) {
+            assignments.push({ className, entry });
+          }
         });
+        return assignments;
+      }
 
-        if (!trimmed) {
-          if (!existingClass) return;
-          delete subjectStore[getCellKey(existingClass, day, period)];
+      async function applySpecialistDropdownSelection(tableName, day, period, selectedClassNumber) {
+        const existingAssignments = getSpecialistAssignmentsAtSlot(tableName, day, period);
+        const backup = existingAssignments.map((item) => ({
+          key: getCellKey(item.className, day, period),
+          entry: item.entry
+        }));
+
+        if (!selectedClassNumber) {
+          backup.forEach((item) => {
+            delete subjectStore[item.key];
+          });
           renderTimetables();
           return;
         }
 
-        if (!/^\d+$/.test(trimmed)) {
-          window.alert(`반 번호는 1~${classCount} 범위의 숫자만 입력할 수 있습니다.`);
-          return;
-        }
-
-        const classNumber = Number(trimmed);
-        if (classNumber < 1 || classNumber > classCount) {
-          window.alert(`반 번호는 1~${classCount} 범위의 숫자만 입력할 수 있습니다.`);
-          return;
-        }
-
-        const className = `${classNumber}반`;
+        const className = `${selectedClassNumber}반`;
         let nextEntry = { subject: tableName };
         if (tableName === "체육") {
           const defaultPlace =
-            getEntry(className, day, period)?.pePlace || getEntry(existingClass, day, period)?.pePlace || "강당";
+            getEntry(className, day, period)?.pePlace || existingAssignments[0]?.entry?.pePlace || "강당";
           const pePlace = await openPePlacePicker(defaultPlace);
-          if (pePlace === null) return;
+          if (pePlace === null) {
+            renderTimetables();
+            return;
+          }
           nextEntry = { subject: "체육", pePlace };
         }
 
+        backup.forEach((item) => {
+          delete subjectStore[item.key];
+        });
+
         if (!assignEntryToClassCell(className, day, period, nextEntry)) {
+          backup.forEach((item) => {
+            subjectStore[item.key] = item.entry;
+          });
+          renderTimetables();
           return;
         }
 
         renderTimetables();
+      }
+
+      function editSpecialistCell(cell, tableName, day, period) {
+        const existingAssignments = getSpecialistAssignmentsAtSlot(tableName, day, period);
+        const currentClassNumber = existingAssignments.length === 1 ? existingAssignments[0].className.replace("반", "") : "";
+
+        const select = document.createElement("select");
+        select.setAttribute("aria-label", `${tableName} ${day} ${period}교시 반 선택`);
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = "비우기";
+        select.appendChild(emptyOption);
+
+        for (let number = 1; number <= classCount; number += 1) {
+          const option = document.createElement("option");
+          option.value = String(number);
+          option.textContent = `${number}반`;
+          select.appendChild(option);
+        }
+        select.value = currentClassNumber;
+
+        cell.innerHTML = "";
+        cell.appendChild(select);
+        select.focus();
+
+        const applyAndClose = async () => {
+          await applySpecialistDropdownSelection(tableName, day, period, select.value);
+        };
+
+        select.addEventListener("change", applyAndClose, { once: true });
+        select.addEventListener("blur", () => {
+          renderTimetables();
+        });
       }
 
       function renderSpecialistOptions() {
