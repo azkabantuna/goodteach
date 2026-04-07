@@ -498,7 +498,7 @@
             다시 실행하면 수동 확정/체육/X 설정은 유지한 채 새로운 무작위 배치로 다시 생성됩니다.
           </li>
         </ol>
-        <div class="credit-note">제작: github: azkabantuna · 네이버 치다랑어의 블로그</div>
+        <div class="credit-note">제작: github: azkabantuna · 치다랑어의 블로그</div>
       </section>
 
       <section class="controls" aria-label="표시 설정">
@@ -1109,6 +1109,13 @@
 
       function assignEntryToClassCell(className, day, period, nextEntry, showAlert = true, source = "manual") {
         const key = getCellKey(className, day, period);
+        if (
+          source === "auto" &&
+          isSpecialistSubject(nextEntry.subject) &&
+          hasSubjectInOtherPeriodSameDay(className, day, period, nextEntry.subject)
+        ) {
+          return false;
+        }
         if (hasSpecialistConflict(className, day, period, nextEntry, showAlert)) {
           return false;
         }
@@ -1135,6 +1142,20 @@
       function hasSubjectOnDayForClass(className, day, subject) {
         for (let period = 1; period <= maxPeriodCount; period += 1) {
           const entry = getEntry(className, day, period);
+          if (!entry) continue;
+          if (subject === "체육") {
+            if (entry.subject === "체육") return true;
+          } else if (entry.subject === subject) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function hasSubjectInOtherPeriodSameDay(className, day, period, subject) {
+        for (let currentPeriod = 1; currentPeriod <= maxPeriodCount; currentPeriod += 1) {
+          if (currentPeriod === period) continue;
+          const entry = getEntry(className, day, currentPeriod);
           if (!entry) continue;
           if (subject === "체육") {
             if (entry.subject === "체육") return true;
