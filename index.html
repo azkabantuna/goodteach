@@ -1745,6 +1745,26 @@
         renderTimetables();
       }
 
+      async function applyPeClassSelectionFlow(day, period, selectedClassNumber) {
+        if (!selectedClassNumber) {
+          ["강당", "운동장"].forEach((place) => {
+            const existing = getPeAssignmentByPlace(day, period, place);
+            if (existing) {
+              delete subjectStore[getCellKey(existing.className, day, period)];
+            }
+          });
+          renderTimetables();
+          return;
+        }
+
+        const pePlace = await openPePlacePicker("강당");
+        if (pePlace === null) {
+          renderTimetables();
+          return;
+        }
+        await applyPePlaceDropdownSelection(day, period, pePlace, selectedClassNumber);
+      }
+
       function editSpecialistCell(cell, tableName, day, period) {
         document.querySelectorAll(".class-select-menu").forEach((menu) => menu.remove());
 
@@ -1776,20 +1796,8 @@
         };
 
         if (tableName === "체육") {
-          const gymTitle = document.createElement("div");
-          gymTitle.className = "class-select-section-title";
-          gymTitle.textContent = "강당";
-          menu.appendChild(gymTitle);
           renderOptions(async (classNumber) => {
-            await applyPePlaceDropdownSelection(day, period, "강당", classNumber);
-          });
-
-          const groundTitle = document.createElement("div");
-          groundTitle.className = "class-select-section-title";
-          groundTitle.textContent = "운동장";
-          menu.appendChild(groundTitle);
-          renderOptions(async (classNumber) => {
-            await applyPePlaceDropdownSelection(day, period, "운동장", classNumber);
+            await applyPeClassSelectionFlow(day, period, classNumber);
           });
         } else {
           renderOptions(async (classNumber) => {
